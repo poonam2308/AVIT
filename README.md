@@ -1,1 +1,1 @@
-
+Rethinking sampling in Vision Transformers
