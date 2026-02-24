@@ -24,16 +24,17 @@ def gumbel_sigmoid(
     tau: float,
     training: bool,
     hard: bool = False,
-    eps: float = 1e-10,
+    eps: float = 1e-6,
 ) -> torch.Tensor:
     """
     logits: [B, N]
     returns: [B, N] in (0,1) (soft) or {0,1} with straight-through (hard=True)
     """
     if training:
-        u = torch.rand_like(logits).clamp(eps, 1 - eps)
+        u = torch.rand_like(logits, dtype=torch.float32).clamp(eps, 1 - eps)
         g = torch.log(u) - torch.log(1 - u)  # logistic noise
         y = torch.sigmoid((logits + g) / tau)
+        y = y.to(logits.dtype)
     else:
         y = torch.sigmoid(logits)
 
@@ -64,6 +65,7 @@ def entropy_loss(gates: List[torch.Tensor], eps: float = 1e-8) -> torch.Tensor:
         return torch.tensor(0.0, device=gates[0].device if gates else "cpu")
     losses = []
     for m in gates:
+        m = torch.nan_to_num(m, nan=0.5, posinf=1.0, neginf=0.0)
         m = m.clamp(eps, 1 - eps)
         ent = -(m * torch.log(m) + (1 - m) * torch.log(1 - m))
         losses.append(ent.mean())
@@ -220,6 +222,11 @@ class DynamicMaskedBlock(nn.Module):
         else:
             m = gumbel_sigmoid(logits, tau=tau, training=training, hard=hard_gates)
 
+        if torch.isnan(m).any() or torch.isinf(m).any():
+            print("NaN/Inf detected in gates m")
+            print("logits stats:", logits.min().item(), logits.max().item())
+            print("m stats:", m.min().item(), m.max().item())
+            raise RuntimeError("NaN/Inf in gates")
         # Attention key mask as additive logits: log(m+eps) <= 0
         attn_add_mask = torch.log(m.clamp(eps_mask, 1.0))  # [B, N_keys]
 
