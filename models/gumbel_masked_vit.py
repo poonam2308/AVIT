@@ -57,18 +57,20 @@ def budget_loss(gates: List[torch.Tensor], target_keep_ratio: float) -> torch.Te
     return torch.stack(losses).mean()
 
 
-def entropy_loss(gates: List[torch.Tensor], eps: float = 1e-8) -> torch.Tensor:
+def entropy_loss(gates: List[torch.Tensor], eps: float = 1e-6) -> torch.Tensor:
     """
     gates: list of [B, N]
+    Robust to fp16/bf16 and avoids 0 * log(0) NaNs.
     """
     if len(gates) == 0:
         return torch.tensor(0.0, device=gates[0].device if gates else "cpu")
+
     losses = []
     for m in gates:
-        m = torch.nan_to_num(m, nan=0.5, posinf=1.0, neginf=0.0)
-        m = m.clamp(eps, 1 - eps)
-        ent = -(m * torch.log(m) + (1 - m) * torch.log(1 - m))
+        m32 = m.float().clamp(eps, 1.0 - eps)
+        ent = -(m32 * torch.log(m32) + (1.0 - m32) * torch.log(1.0 - m32))
         losses.append(ent.mean())
+
     return torch.stack(losses).mean()
 
 
