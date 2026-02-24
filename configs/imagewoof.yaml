@@ -32,7 +32,8 @@ gumbel:
   inference_topk: null
 
 train:
-  epochs: 20
+  out_dir: ./outputs/imagewoof_run1
+  epochs: 100
   lr: 0.0003
   weight_decay: 0.05
   grad_clip: 1.0

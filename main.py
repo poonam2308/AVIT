@@ -202,7 +202,7 @@ def main():
             if acc > best_acc:
                 best_acc = acc
                 save_checkpoint(out_dir / "checkpoints" / "best.pth", model, optimizer, cfg_dict, epoch, global_step, best_acc)
-                print(f"[ckpt] new best acc {best_acc * 100:.2f}% -> saved best.pt")
+                print(f"[ckpt] new best acc {best_acc * 100:.2f}% -> saved best.pth")
 
         print("done")
 
