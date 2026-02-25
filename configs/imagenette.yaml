@@ -6,6 +6,10 @@ dataset:
   num_workers: 4
 
 model:
+  timm_name: vit_base_patch16_224
+  pretrained: False
+  keep_k: 64
+  score_hidden: 128
   patch_size: 16
   embed_dim: 256
   depth: 8

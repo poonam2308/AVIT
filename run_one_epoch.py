@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict, Optional, Tuple
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def train_one_epoch(
@@ -21,6 +22,7 @@ def train_one_epoch(
 
     # running sums for epoch averages
     n_logs = 0
+    loss_sum = 0.0
     sums = {
         "loss": 0.0,
         "loss_task": 0.0,
@@ -35,8 +37,10 @@ def train_one_epoch(
         labels = labels.to(device, non_blocking=True)
 
         optimizer.zero_grad(set_to_none=True)
-        out: Dict[str, torch.Tensor] = model(images, labels=labels, global_step=global_step)
-        loss = out["loss"]
+        #out: Dict[str, torch.Tensor] = model(images, labels=labels, global_step=global_step)
+        #loss = out["loss"]
+        logits = model(images)
+        loss = F.cross_entropy(logits, labels)
         loss.backward()
 
         if grad_clip is not None and grad_clip > 0:
@@ -50,27 +54,31 @@ def train_one_epoch(
                 "epoch": epoch,
                 "iter": it,
                 "loss": float(loss.item()),
-                "loss_task": float(out["loss_task"].item()),
-                "loss_budget": float(out["loss_budget"].item()),
-                "loss_entropy": float(out["loss_entropy"].item()),
-                "keep_ratio_mean": float(out["keep_ratio_mean"].item()),
-                "tau": float(out["tau"].item()),
+                # "loss_task": float(out["loss_task"].item()),
+                # "loss_budget": float(out["loss_budget"].item()),
+                # "loss_entropy": float(out["loss_entropy"].item()),
+                # "keep_ratio_mean": float(out["keep_ratio_mean"].item()),
+                # "tau": float(out["tau"].item()),
                 "lr": float(optimizer.param_groups[0]["lr"]),
             }
+            print(f"step {global_step:6d}  loss {row['loss']:.4f}  lr {row['lr']:.2e}")
 
-            print(
-                f"step {global_step:6d}  "
-                f"loss {row['loss']:.4f}  "
-                f"task {row['loss_task']:.4f}  "
-                f"bud {row['loss_budget']:.4f}  "
-                f"ent {row['loss_entropy']:.4f}  "
-                f"keep {row['keep_ratio_mean']:.3f}  "
-                f"tau {row['tau']:.3f}"
-            )
+            # print(
+            #     f"step {global_step:6d}  "
+            #     f"loss {row['loss']:.4f}  "
+            #     f"task {row['loss_task']:.4f}  "
+            #     f"bud {row['loss_budget']:.4f}  "
+            #     f"ent {row['loss_entropy']:.4f}  "
+            #     f"keep {row['keep_ratio_mean']:.3f}  "
+            #     f"tau {row['tau']:.3f}"
+            # )
 
             # accumulate epoch averages (over logged points)
-            for k in sums:
-                sums[k] += row[k]
+            # for k in sums:
+            #     sums[k] += row[k]
+            # n_logs += 1
+
+            loss_sum += row["loss"]
             n_logs += 1
 
             # local CSV logging
@@ -78,36 +86,44 @@ def train_one_epoch(
                 csv_writer.writerow(row)
 
             # wandb logging
+
             if wandb_run is not None:
-                wandb_run.log(
-                    {
-                        "train/loss": row["loss"],
-                        "train/loss_task": row["loss_task"],
-                        "train/loss_budget": row["loss_budget"],
-                        "train/loss_entropy": row["loss_entropy"],
-                        "train/keep_ratio_mean": row["keep_ratio_mean"],
-                        "train/tau": row["tau"],
-                        "train/lr": row["lr"],
-                        "epoch": epoch,
-                    },
-                    step=global_step,
-                )
+                wandb_run.log({"train/loss": row["loss"], "train/lr": row["lr"],
+                               "epoch": epoch}, step=global_step)
+
+            # if wandb_run is not None:
+            #     wandb_run.log(
+            #         {
+            #             "train/loss": row["loss"],
+            #             "train/loss_task": row["loss_task"],
+            #             "train/loss_budget": row["loss_budget"],
+            #             "train/loss_entropy": row["loss_entropy"],
+            #             "train/keep_ratio_mean": row["keep_ratio_mean"],
+            #             "train/tau": row["tau"],
+            #             "train/lr": row["lr"],
+            #             "epoch": epoch,
+            #         },
+            #         step=global_step,
+            #     )
 
         global_step += 1
 
     # return epoch averages (over log points)
-    if n_logs == 0:
-        epoch_stats = {k: 0.0 for k in sums}
-    else:
-        epoch_stats = {k: v / n_logs for k, v in sums.items()}
+    # if n_logs == 0:
+    #     epoch_stats = {k: 0.0 for k in sums}
+    # else:
+    #     epoch_stats = {k: v / n_logs for k, v in sums.items()}
+    #
+    # return global_step, epoch_stats
 
+    epoch_stats = {"loss": (loss_sum / max(1, n_logs))}
     return global_step, epoch_stats
 
 
 @torch.no_grad()
 def evaluate(
     model: nn.Module,
-    loader: torch.utils.data.DataLoader,
+    loader,
     device: torch.device,
 ) -> float:
     model.eval()
@@ -117,8 +133,8 @@ def evaluate(
     for images, labels in loader:
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
-        out = model(images, labels=None, global_step=0)
-        pred = out["logits"].argmax(dim=1)
+        logits = model(images)
+        pred = logits.argmax(dim=1)
         correct += (pred == labels).sum().item()
         total += labels.numel()
 

@@ -5,3 +5,4 @@ torch
 torchvision
 pyyaml
 wandb
+timm

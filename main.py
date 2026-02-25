@@ -10,6 +10,7 @@ import yaml
 
 from datasets import imagenet_style_loaders
 from models.gumbel_masked_vit import MaskedViTConfig, MaskedViT
+from models.refined_vit import RefinedTimmViT
 from run_one_epoch import train_one_epoch, evaluate
 
 
@@ -101,8 +102,8 @@ def main():
     dset = cfg_dict["dataset"]
     train_cfg = cfg_dict["train"]
     model_cfg = cfg_dict["model"]
-    gating = cfg_dict["gating"]
-    gumbel = cfg_dict["gumbel"]
+    # gating = cfg_dict["gating"]
+    # gumbel = cfg_dict["gumbel"]
 
     out_dir = Path(train_cfg.get("out_dir", "./outputs/run1"))
     (out_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
@@ -114,11 +115,12 @@ def main():
     # CSV logging
     csv_path = out_dir / "metrics.csv"
     csv_file = open(csv_path, "w", newline="")
-    fieldnames = [
-        "step", "epoch", "iter",
-        "loss", "loss_task", "loss_budget", "loss_entropy",
-        "keep_ratio_mean", "tau", "lr",
-    ]
+    # fieldnames = [
+    #     "step", "epoch", "iter",
+    #     "loss", "loss_task", "loss_budget", "loss_entropy",
+    #     "keep_ratio_mean", "tau", "lr",
+    # ]
+    fieldnames = ["step", "epoch", "iter", "loss", "lr"]
     csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
     csv_writer.writeheader()
 
@@ -132,32 +134,41 @@ def main():
         )
 
         # model
-        vit_cfg = MaskedViTConfig(
-            img_size=dset["img_size"],
-            patch_size=model_cfg["patch_size"],
-            in_chans=3,
-            num_classes=dset["num_classes"],
-            embed_dim=model_cfg["embed_dim"],
-            depth=model_cfg["depth"],
-            warmup_depth=model_cfg["warmup_depth"],
-            num_heads=model_cfg["num_heads"],
-            mlp_ratio=model_cfg.get("mlp_ratio", 4.0),
-            dropout=model_cfg.get("dropout", 0.1),
-            attn_dropout=model_cfg.get("attn_dropout", 0.1),
-            gate_mlp=gating.get("gate_mlp", True),
-            gate_hidden=gating.get("gate_hidden", 128),
-            gate_mlp_updates=gating.get("gate_mlp_updates", True),
-            target_keep_ratio=gating["target_keep_ratio"],
-            lambda_budget=gating["lambda_budget"],
-            lambda_entropy=gating["lambda_entropy"],
-            tau_start=gumbel["tau_start"],
-            tau_end=gumbel["tau_end"],
-            tau_anneal_steps=gumbel["tau_anneal_steps"],
-            hard_gates_train=gumbel.get("hard_gates_train", False),
-            inference_topk=gumbel.get("inference_topk", None),
-        )
+        # vit_cfg = MaskedViTConfig(
+        #     img_size=dset["img_size"],
+        #     patch_size=model_cfg["patch_size"],
+        #     in_chans=3,
+        #     num_classes=dset["num_classes"],
+        #     embed_dim=model_cfg["embed_dim"],
+        #     depth=model_cfg["depth"],
+        #     warmup_depth=model_cfg["warmup_depth"],
+        #     num_heads=model_cfg["num_heads"],
+        #     mlp_ratio=model_cfg.get("mlp_ratio", 4.0),
+        #     dropout=model_cfg.get("dropout", 0.1),
+        #     attn_dropout=model_cfg.get("attn_dropout", 0.1),
+        #     gate_mlp=gating.get("gate_mlp", True),
+        #     gate_hidden=gating.get("gate_hidden", 128),
+        #     gate_mlp_updates=gating.get("gate_mlp_updates", True),
+        #     target_keep_ratio=gating["target_keep_ratio"],
+        #     lambda_budget=gating["lambda_budget"],
+        #     lambda_entropy=gating["lambda_entropy"],
+        #     tau_start=gumbel["tau_start"],
+        #     tau_end=gumbel["tau_end"],
+        #     tau_anneal_steps=gumbel["tau_anneal_steps"],
+        #     hard_gates_train=gumbel.get("hard_gates_train", False),
+        #     inference_topk=gumbel.get("inference_topk", None),
+        # )
 
-        model = MaskedViT(vit_cfg).to(device)
+        # model = MaskedViT(vit_cfg).to(device)
+
+        model = RefinedTimmViT(
+            timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
+            pretrained=model_cfg.get("pretrained", True),
+            num_classes=dset["num_classes"],
+            warmup_depth=model_cfg.get("warmup_depth", 2),
+            keep_k=model_cfg.get("keep_k", 64),
+            score_hidden=model_cfg.get("score_hidden", 128),
+        ).to(device)
 
         optimizer = torch.optim.AdamW(
             model.parameters(),
@@ -166,8 +177,8 @@ def main():
         )
 
         best_acc = -1.0
-        history = {"epoch": [], "train_loss": [], "train_keep": [], "train_tau": [], "val_acc": []}
-
+        # history = {"epoch": [], "train_loss": [], "train_keep": [], "train_tau": [], "val_acc": []}
+        history = {"epoch": [], "train_loss": [], "val_acc": []}
         global_step = 0
         for epoch in range(1, train_cfg["epochs"] + 1):
             global_step, epoch_stats = train_one_epoch(
@@ -188,8 +199,8 @@ def main():
 
             history["epoch"].append(epoch)
             history["train_loss"].append(epoch_stats["loss"])
-            history["train_keep"].append(epoch_stats["keep_ratio_mean"])
-            history["train_tau"].append(epoch_stats["tau"])
+            # history["train_keep"].append(epoch_stats["keep_ratio_mean"])
+            # history["train_tau"].append(epoch_stats["tau"])
             history["val_acc"].append(acc)
 
             if wandb_run is not None:
@@ -215,14 +226,14 @@ def main():
         plt.savefig(out_dir / "loss_curve.png", dpi=150)
         plt.close()
 
-        plt.figure()
-        plt.plot(history["epoch"], history["train_keep"], label="keep_ratio")
-        plt.plot(history["epoch"], history["train_tau"], label="tau")
-        plt.xlabel("epoch")
-        plt.title("Keep ratio & tau")
-        plt.legend()
-        plt.savefig(out_dir / "keep_tau.png", dpi=150)
-        plt.close()
+        # plt.figure()
+        # plt.plot(history["epoch"], history["train_keep"], label="keep_ratio")
+        # plt.plot(history["epoch"], history["train_tau"], label="tau")
+        # plt.xlabel("epoch")
+        # plt.title("Keep ratio & tau")
+        # plt.legend()
+        # plt.savefig(out_dir / "keep_tau.png", dpi=150)
+        # plt.close()
 
         plt.figure()
         plt.plot(history["epoch"], history["val_acc"])
