@@ -35,8 +35,8 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagenette_run2
-  epochs: 100
+  out_dir: ./outputs/imagenette_refine_vit
+  epochs: 200
   lr: 0.0003
   weight_decay: 0.05
   grad_clip: 1.0

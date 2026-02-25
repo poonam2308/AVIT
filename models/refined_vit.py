@@ -2,6 +2,58 @@ import torch
 import torch.nn as nn
 import timm
 
+import torch
+import torch.nn as nn
+
+class HeatmapPositionSelector(nn.Module):
+    """
+    Learns a spatial heatmap over patch grid (GxG) and selects top-k positions.
+    """
+    def __init__(self, embed_dim: int, grid_size: int, hidden: int = 128):
+        super().__init__()
+        self.grid_size = grid_size
+        # 1x1 conv = per-location MLP on feature map
+        self.head = nn.Sequential(
+            nn.Conv2d(embed_dim, hidden, kernel_size=1),
+            nn.GELU(),
+            nn.Conv2d(hidden, 1, kernel_size=1),
+        )
+
+    def forward(self, x_tokens: torch.Tensor, k: int):
+        """
+        x_tokens: [B, 1+N, D] where N=G*G, CLS at 0
+        returns:
+          x_reduced: [B, 1+k, D]
+          idx_full: [B, 1+k] token indices in original token sequence (CLS included)
+          heatmap: [B, G, G]
+        """
+        B, Ntot, D = x_tokens.shape
+        G = self.grid_size
+        assert Ntot == 1 + G * G
+
+        cls = x_tokens[:, :1, :]           # [B,1,D]
+        patches = x_tokens[:, 1:, :]       # [B, G*G, D]
+
+        # reshape patches to feature map
+        fmap = patches.transpose(1, 2).reshape(B, D, G, G)  # [B,D,G,G]
+
+        # heatmap scores
+        hm = self.head(fmap).squeeze(1)                    # [B,G,G]
+        flat = hm.flatten(1)                               # [B, G*G]
+
+        k = min(k, G * G)
+        topk = flat.topk(k, dim=1).indices                 # [B,k] in [0..G*G-1]
+
+        # convert patch indices to token indices (shift by +1 because CLS is token 0)
+        idx_full = torch.cat(
+            [torch.zeros(B, 1, device=x_tokens.device, dtype=topk.dtype), topk + 1],
+            dim=1
+        )  # [B,1+k]
+
+        idx_exp = idx_full.unsqueeze(-1).expand(-1, -1, D)
+        x_reduced = x_tokens.gather(dim=1, index=idx_exp)
+
+        return x_reduced, idx_full, hm
 
 class TopKTokenSelector(nn.Module):
     """
@@ -68,6 +120,10 @@ class RefinedTimmViT(nn.Module):
         dim = self.vit.embed_dim
         self.selector = TopKTokenSelector(dim, hidden=score_hidden)
 
+        # G = self.vit.patch_embed.grid_size[0]  # (G,G)
+        # self.selector = HeatmapPositionSelector(dim, grid_size=G, hidden=score_hidden)
+
+
         # For convenience / debugging
         self.last_selected_idx = None
         self.last_scores = None
@@ -98,6 +154,10 @@ class RefinedTimmViT(nn.Module):
         # (optional) keep for visualization
         self.last_selected_idx = idx_full.detach()
         self.last_scores = scores.detach()
+
+        # x_reduced, idx_full, heatmap = self.selector(x, k=self.keep_k)
+        # self.last_scores = heatmap.detach()  # now it's a [B,G,G] heatmap
+        # self.last_selected_idx = idx_full.detach()
 
         # ---- Continue remaining SA blocks on reduced tokens ----
         for i in range(self.warmup_depth, len(vit.blocks)):
