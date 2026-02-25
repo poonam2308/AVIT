@@ -1,0 +1,52 @@
+dataset:
+  name: cifar10
+  data_root: ./data
+  num_classes: 10
+  batch_size: 128
+  num_workers: 4
+  img_size: 224
+
+model:
+  timm_name: deit_small_patch16_224
+  pretrained: False
+  keep_k: 96
+  score_hidden: 128
+  patch_size: 16
+  embed_dim: 256
+  depth: 8
+  warmup_depth: 4
+  num_heads: 8
+  mlp_ratio: 4.0
+  dropout: 0.1
+  attn_dropout: 0.1
+
+gating:
+  target_keep_ratio: 0.6
+  lambda_budget: 1.0
+  lambda_entropy: 0.01
+  gate_mlp: true
+  gate_hidden: 128
+  gate_mlp_updates: true
+
+gumbel:
+  tau_start: 1.0
+  tau_end: 0.2
+  tau_anneal_steps: 20000
+  hard_gates_train: false
+  inference_topk: null
+
+train:
+  out_dir: ./outputs/cifar_rvit
+  epochs: 200
+  lr: 0.0003
+  weight_decay: 0.05
+  grad_clip: 1.0
+  log_every: 50
+  seed: 42
+
+wandb:
+  enabled: true
+  project: masked-vit
+  entity: null
+  name: null
+  tags: ["cifar"]

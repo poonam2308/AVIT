@@ -8,7 +8,7 @@ import torch
 import wandb
 import yaml
 
-from datasets import imagenet_style_loaders
+from datasets import imagenet_style_loaders, cifar10_loaders
 from models.gumbel_masked_vit import MaskedViTConfig, MaskedViT
 from models.refined_vit import RefinedTimmViT
 from run_one_epoch import train_one_epoch, evaluate
@@ -126,12 +126,27 @@ def main():
 
     try:
         # data
-        train_loader, val_loader = imagenet_style_loaders(
-            data_root=dset["data_root"],
-            img_size=dset["img_size"],
-            batch_size=dset["batch_size"],
-            num_workers=dset.get("num_workers", 4),
-        )
+        name = dset.get("name", "imagenet_style").lower()
+
+        if name in ("cifar10", "cifar-10"):
+            train_loader, val_loader = cifar10_loaders(
+                data_root=dset.get("data_root", "./data"),
+                batch_size=dset["batch_size"],
+                num_workers=dset.get("num_workers", 4),
+            )
+        else:
+            train_loader, val_loader = imagenet_style_loaders(
+                data_root=dset["data_root"],
+                img_size=dset["img_size"],
+                batch_size=dset["batch_size"],
+                num_workers=dset.get("num_workers", 4),
+            )
+        # train_loader, val_loader = imagenet_style_loaders(
+        #     data_root=dset["data_root"],
+        #     img_size=dset["img_size"],
+        #     batch_size=dset["batch_size"],
+        #     num_workers=dset.get("num_workers", 4),
+        # )
 
         # model
         # vit_cfg = MaskedViTConfig(
