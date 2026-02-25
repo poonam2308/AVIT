@@ -9,6 +9,7 @@ import wandb
 import yaml
 
 from datasets import imagenet_style_loaders, cifar10_loaders
+from models.baseline_vit import BaselineTimmViT
 from models.gumbel_masked_vit import MaskedViTConfig, MaskedViT
 from models.refined_vit import RefinedTimmViT
 from run_one_epoch import train_one_epoch, evaluate
@@ -177,14 +178,38 @@ def main():
 
         # model = MaskedViT(vit_cfg).to(device)
 
-        model = RefinedTimmViT(
-            timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
-            pretrained=model_cfg.get("pretrained", True),
-            num_classes=dset["num_classes"],
-            warmup_depth=model_cfg.get("warmup_depth", 2),
-            keep_k=model_cfg.get("keep_k", 64),
-            score_hidden=model_cfg.get("score_hidden", 128),
-        ).to(device)
+        # model = RefinedTimmViT(
+        #     timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
+        #     pretrained=model_cfg.get("pretrained", True),
+        #     num_classes=dset["num_classes"],
+        #     warmup_depth=model_cfg.get("warmup_depth", 2),
+        #     keep_k=model_cfg.get("keep_k", 64),
+        #     score_hidden=model_cfg.get("score_hidden", 128),
+        # ).to(device)
+
+        model_type = model_cfg.get("type", "refined").lower()
+
+        if model_type == "baseline":
+            print("Using BASELINE ViT")
+            model = BaselineTimmViT(
+                timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
+                pretrained=model_cfg.get("pretrained", True),
+                num_classes=dset["num_classes"],
+            ).to(device)
+
+        else:
+            print("Using REFINED ViT (token selection)")
+            model = RefinedTimmViT(
+                timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
+                pretrained=model_cfg.get("pretrained", True),
+                num_classes=dset["num_classes"],
+                warmup_depth=model_cfg.get("warmup_depth", 2),
+                keep_k=model_cfg.get("keep_k", 64),
+                score_hidden=model_cfg.get("score_hidden", 128),
+            ).to(device)
+
+
+
 
         optimizer = torch.optim.AdamW(
             model.parameters(),

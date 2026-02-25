@@ -6,6 +6,7 @@ dataset:
   num_workers: 4
 
 model:
+  type: baseline
   timm_name: vit_base_patch16_224
   # timm_name: deit_small_patch16_224
   pretrained: False

@@ -7,7 +7,9 @@ dataset:
   img_size: 224
 
 model:
-  timm_name: deit_small_patch16_224
+  type: baseline
+  # type: refined
+  timm_name: vit_base_patch16_224
   pretrained: False
   keep_k: 96
   score_hidden: 128
