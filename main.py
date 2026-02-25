@@ -133,6 +133,7 @@ def main():
                 data_root=dset.get("data_root", "./data"),
                 batch_size=dset["batch_size"],
                 num_workers=dset.get("num_workers", 4),
+                img_size=dset.get("img_size", 224),
             )
         else:
             train_loader, val_loader = imagenet_style_loaders(
