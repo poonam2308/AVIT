@@ -38,7 +38,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/cifar_rvit
+  out_dir: ./outputs/cifar_vit_baseline
   epochs: 200
   lr: 0.0003
   weight_decay: 0.05
