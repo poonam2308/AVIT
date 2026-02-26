@@ -6,15 +6,29 @@ dataset:
   num_workers: 4
 
 # rest same as imagenette.yaml
+#model:
+#  patch_size: 16
+#  embed_dim: 256
+#  depth: 8
+#  warmup_depth: 2
+#  num_heads: 8
+#  mlp_ratio: 4.0
+#  dropout: 0.1
+#  attn_dropout: 0.1
+
 model:
-  patch_size: 16
-  embed_dim: 256
-  depth: 8
-  warmup_depth: 2
-  num_heads: 8
-  mlp_ratio: 4.0
-  dropout: 0.1
-  attn_dropout: 0.1
+  type: route_gumbel
+  keep_k: 32
+  split_block: 4
+  qk_dim: 128
+  mode: tokens
+  reduce: logsumexp
+  tau_start: 2.0
+  tau_end: 0.5
+  tau_decay: 0.9995
+  gumbel_off_step: 20000
+  lambda_div: 0.01
+  div_type: usage_entropy
 
 gating:
   target_keep_ratio: 0.6
@@ -32,10 +46,17 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagewoof_run1
-  epochs: 100
+  out_dir: ./outputs/imagewoof_route_1
+  epochs: 50
   lr: 0.0003
   weight_decay: 0.05
   grad_clip: 1.0
   log_every: 50
   seed: 42
+
+wandb:
+  enabled: true
+  project: masked-vit
+  entity: "poonamps1791"
+  name: null
+  tags: ["imagewoof"]
