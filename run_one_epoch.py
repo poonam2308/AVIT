@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from models.route_gumbel_vit import diversity_batch_cosine, diversity_usage_uniform
+
 
 def train_one_epoch(
     model: nn.Module,
@@ -39,8 +41,40 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
         #out: Dict[str, torch.Tensor] = model(images, labels=labels, global_step=global_step)
         #loss = out["loss"]
-        logits = model(images)
-        loss = F.cross_entropy(logits, labels)
+        # logits = model(images)
+        # loss = F.cross_entropy(logits, labels)
+
+        # ---- if model has routing schedule, update tau + gumbel flag ----
+        if hasattr(model, "routing_schedule") and hasattr(model, "router"):
+            tau, use_gumbel = model.routing_schedule(global_step)
+            if hasattr(model.router, "set_tau"):
+                model.router.set_tau(tau)
+            else:
+                model.router.tau = float(tau)
+
+            if hasattr(model.router, "set_use_gumbel"):
+                model.router.set_use_gumbel(use_gumbel)
+            elif hasattr(model.router, "use_gumbel"):
+                model.router.use_gumbel = bool(use_gumbel)
+
+        # ---- forward (request debug if supported) ----
+        try:
+            logits, dbg = model(images, return_debug=True)
+        except TypeError:
+            logits = model(images)
+            dbg = None
+
+        loss_task = F.cross_entropy(logits, labels)
+        loss = loss_task
+
+        # ---- diversity regularizer (optional) ----
+        lambda_div = getattr(model, "lambda_div", 0.0)
+        if lambda_div > 0.0 and dbg is not None and isinstance(dbg, dict) and "soft_w" in dbg:
+            if getattr(model, "div_type", "usage_entropy") == "batch_cosine":
+                loss_div = diversity_batch_cosine(dbg["soft_w"])
+            else:
+                loss_div = diversity_usage_uniform(dbg["soft_w"])
+            loss = loss + lambda_div * loss_div
         loss.backward()
 
         if grad_clip is not None and grad_clip > 0:
@@ -60,6 +94,7 @@ def train_one_epoch(
                 # "keep_ratio_mean": float(out["keep_ratio_mean"].item()),
                 # "tau": float(out["tau"].item()),
                 "lr": float(optimizer.param_groups[0]["lr"]),
+                "tau": float(getattr(getattr(model, "router", None), "tau", 0.0)),
             }
             print(f"step {global_step:6d}  loss {row['loss']:.4f}  lr {row['lr']:.2e}")
 

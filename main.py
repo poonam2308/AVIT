@@ -12,6 +12,7 @@ from datasets import imagenet_style_loaders, cifar10_loaders
 from models.baseline_vit import BaselineTimmViT
 from models.gumbel_masked_vit import MaskedViTConfig, MaskedViT
 from models.refined_vit import RefinedTimmViT
+from models.route_gumbel_vit import TimmViTWithTopKRouting_STGumbel, RoutingSchedule
 from run_one_epoch import train_one_epoch, evaluate
 
 
@@ -121,7 +122,7 @@ def main():
     #     "loss", "loss_task", "loss_budget", "loss_entropy",
     #     "keep_ratio_mean", "tau", "lr",
     # ]
-    fieldnames = ["step", "epoch", "iter", "loss", "lr"]
+    fieldnames = ["step", "epoch", "iter", "loss", "lr", "tau"]
     csv_writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
     csv_writer.writeheader()
 
@@ -196,6 +197,33 @@ def main():
                 pretrained=model_cfg.get("pretrained", True),
                 num_classes=dset["num_classes"],
             ).to(device)
+
+
+        elif model_type in ("route_gumbel", "route_gumbel_vit", "st_gumbel"):
+            print("Using ROUTE GUMBEL ViT (ST Gumbel-TopK)")
+            model = TimmViTWithTopKRouting_STGumbel(
+                timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
+                pretrained=model_cfg.get("pretrained", True),
+                num_classes=dset["num_classes"],
+                split_block=model_cfg.get("split_block", 4),
+                qk_dim=model_cfg.get("qk_dim", 128),
+                keep_k=model_cfg.get("keep_k", 32),
+                mode=model_cfg.get("mode", "tokens"),  # "tokens" or "patches"
+                reduce=model_cfg.get("reduce", "logsumexp"),
+                gather_from=model_cfg.get("gather_from", "h0"),  # if mode="patches": "x0" or "h0"
+                tau=model_cfg.get("tau_start", 2.0),  # start tau (we'll anneal in train loop)
+                add_routed_pos=model_cfg.get("add_routed_pos", True),
+            ).to(device)
+
+            model.routing_schedule = RoutingSchedule(
+                tau0=model_cfg.get("tau_start", 2.0),
+                tau_min=model_cfg.get("tau_end", 0.5),
+                decay=model_cfg.get("tau_decay", 0.9995),
+                gumbel_off_step=model_cfg.get("gumbel_off_step", 20000),
+            )
+            model.lambda_div = model_cfg.get("lambda_div", 0.0)
+            model.div_type = model_cfg.get("div_type", "usage_entropy")
+
 
         else:
             print("Using REFINED ViT (token selection)")

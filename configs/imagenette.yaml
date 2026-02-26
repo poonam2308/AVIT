@@ -5,22 +5,34 @@ dataset:
   num_classes: 10
   num_workers: 4
 
+#model:
+#  type: baseline
+#  timm_name: vit_base_patch16_224
+#  # timm_name: deit_small_patch16_224
+#  pretrained: False
+#  keep_k: 96
+#  score_hidden: 128
+#  patch_size: 16
+#  embed_dim: 256
+#  depth: 8
+#  warmup_depth: 4
+#  num_heads: 8
+#  mlp_ratio: 4.0
+#  dropout: 0.1
+#  attn_dropout: 0.1
 model:
-  type: baseline
-  timm_name: vit_base_patch16_224
-  # timm_name: deit_small_patch16_224
-  pretrained: False
-  keep_k: 96
-  score_hidden: 128
-  patch_size: 16
-  embed_dim: 256
-  depth: 8
-  warmup_depth: 4
-  num_heads: 8
-  mlp_ratio: 4.0
-  dropout: 0.1
-  attn_dropout: 0.1
-
+  type: route_gumbel
+  keep_k: 32
+  split_block: 4
+  qk_dim: 128
+  mode: tokens
+  reduce: logsumexp
+  tau_start: 2.0
+  tau_end: 0.5
+  tau_decay: 0.9995
+  gumbel_off_step: 20000
+  lambda_div: 0.01
+  div_type: usage_entropy   # or batch_cosine
 gating:
   target_keep_ratio: 0.6
   lambda_budget: 1.0
@@ -37,7 +49,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagenette_baseline_vit
+  out_dir: ./outputs/imagenette_route_vit
   epochs: 200
   lr: 0.0003
   weight_decay: 0.05
