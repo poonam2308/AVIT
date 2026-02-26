@@ -60,6 +60,6 @@ train:
 wandb:
   enabled: true
   project: masked-vit
-  entity: null
+  entity: "poonamps1791"
   name: null
   tags: ["imagenette"]
