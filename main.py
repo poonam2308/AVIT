@@ -202,7 +202,7 @@ def main():
         elif model_type in ("route_gumbel", "route_gumbel_vit", "st_gumbel"):
             print("Using ROUTE GUMBEL ViT (ST Gumbel-TopK)")
             model = TimmViTWithTopKRouting_STGumbel(
-                timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
+                timm_name=model_cfg.get("timm_name", "deit_small_patch16_224"),
                 pretrained=model_cfg.get("pretrained", True),
                 num_classes=dset["num_classes"],
                 split_block=model_cfg.get("split_block", 4),

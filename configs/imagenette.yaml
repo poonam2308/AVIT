@@ -49,8 +49,8 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagenette_route_vit
-  epochs: 200
+  out_dir: ./outputs/imagenette_route_deit
+  epochs: 50
   lr: 0.0003
   weight_decay: 0.05
   grad_clip: 1.0
