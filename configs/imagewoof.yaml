@@ -46,7 +46,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagewoof_route_1
+  out_dir: ./outputs/imagewoof_route_2
   epochs: 50
   lr: 0.0003
   weight_decay: 0.05
