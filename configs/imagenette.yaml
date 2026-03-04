@@ -22,7 +22,7 @@ dataset:
 #  attn_dropout: 0.1
 
 model:
-  type: token_reduction
+  type: token_emphasis
   timm_name: vit_base_patch16_224
   pretrained: False
   keep_k: 96
@@ -56,7 +56,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagenette_route_deit
+  out_dir: ./outputs/imagenette_route_te
   epochs: 50
   lr: 0.0003
   weight_decay: 0.05
