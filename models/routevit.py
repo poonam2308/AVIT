@@ -3,10 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timm
 
-import math
-
-
-
 def build_full_token_mask(patch_mask: torch.Tensor) -> torch.Tensor:
     """
     patch_mask: (B, N) with 1 for kept tokens, 0 for masked tokens
@@ -52,6 +48,7 @@ def masked_block_forward_(blk, x, full_mask):
     x = x + blk.drop_path(masked_attention_forward(blk.attn, blk.norm1(x), full_mask))
     x = x + blk.drop_path(blk.mlp(blk.norm2(x)))
     return x
+
 def masked_block_forward(blk, x, full_mask):
     """
     Re-implement a timm ViT block forward using masked attention.
@@ -567,6 +564,329 @@ class RouteGumbelViTTokenEmphasis(nn.Module):
                 "token_features": h2[:, 1:, :],
                 "cls_h0": cls_h0,
                 "routed_pos_full": routed_pos_full,
+            }
+            return logits, dbg_out
+
+        return logits
+
+    def forward_debug(self, x):
+        self.eval()
+        with torch.no_grad():
+            _, dbg = self.forward(x, return_debug=True)
+        return dbg
+
+class RouteGumbelViTTokenReductionConcat(nn.Module):
+    """
+    Token reduction variant with concat fusion:
+        selected_fused = fuse_proj([selected_h0 ; selected_x0])
+
+    forward(x) -> logits
+    forward(x, return_debug=True) -> logits, dbg
+    """
+
+    def __init__(
+        self,
+        timm_name="vit_base_patch16_224",
+        pretrained=False,
+        num_classes=10,
+        split_block=4,
+        qk_dim=128,
+        keep_k=32,
+        mode="tokens",
+        reduce="logsumexp",
+        gather_from="x0",
+        tau=1.0,
+        add_routed_pos=True,
+    ):
+        super().__init__()
+
+        self.vit = timm.create_model(timm_name, pretrained=pretrained)
+        self.vit.reset_classifier(num_classes=num_classes)
+
+        for attr in ("patch_embed", "cls_token", "pos_embed", "pos_drop",
+                     "blocks", "norm", "head"):
+            assert hasattr(self.vit, attr), f"Expected vit.{attr} to exist."
+
+        self.num_classes = num_classes
+        self.num_features = self.embed_dim = self.vit.embed_dim
+        self.split_block = split_block
+        self.add_routed_pos = add_routed_pos
+        self.keep_k = keep_k
+
+        self.router = STGumbelTopKRouteBlock(
+            embed_dim=self.embed_dim,
+            qk_dim=qk_dim,
+            keep_k=keep_k,
+            mode=mode,
+            reduce=reduce,
+            gather_from=gather_from,
+            tau=tau,
+        )
+
+        self.routed_pos = nn.Parameter(torch.zeros(1, keep_k, self.embed_dim))
+        nn.init.trunc_normal_(self.routed_pos, std=0.02)
+
+        # concat fusion: [selected_h0 ; selected_x0] -> D
+        self.fuse_proj = nn.Linear(2 * self.embed_dim, self.embed_dim)
+
+        self.last_selected_idx = None
+        self.last_scores = None
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {"vit.pos_embed", "vit.cls_token", "routed_pos"}
+
+    def get_classifier(self):
+        return self.vit.head
+
+    def reset_classifier(self, num_classes, global_pool=''):
+        self.num_classes = num_classes
+        self.vit.reset_classifier(num_classes)
+
+    def set_tau(self, tau: float):
+        if hasattr(self.router, "set_tau"):
+            self.router.set_tau(tau)
+        else:
+            self.router.tau = tau
+
+    def set_use_gumbel(self, flag: bool):
+        if hasattr(self.router, "set_use_gumbel"):
+            self.router.set_use_gumbel(flag)
+        else:
+            self.router.use_gumbel = flag
+
+    def forward(self, x, return_debug: bool = False):
+        B = x.shape[0]
+
+        x = self.vit.patch_embed(x)                 # (B, N, D)
+        N = x.shape[1]
+
+        cls = self.vit.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls, x), dim=1)             # (B, 1+N, D)
+        x = x + self.vit.pos_embed[:, :N + 1, :]
+        x = self.vit.pos_drop(x)
+
+        X0_patches = x[:, 1:, :]                   # (B, N, D)
+
+        h = x
+        for blk in self.vit.blocks[:self.split_block]:
+            h = blk(h)
+
+        cls_h0 = h[:, :1, :]
+        H0_patches = h[:, 1:, :]                   # (B, N, D)
+
+        selected_x0, dbg = self.router(X0_patches, H0_patches)
+        idx = dbg["idx"]                           # (B, K)
+        scores = dbg.get("scores", None)
+        soft_w = dbg.get("soft_w", None)
+
+        self.last_selected_idx = idx
+        self.last_scores = scores
+
+        Ksel = idx.shape[1]
+
+        selected_h0 = torch.gather(
+            H0_patches,
+            1,
+            idx.unsqueeze(-1).expand(-1, -1, self.embed_dim)
+        )                                          # (B, K, D)
+
+        if self.add_routed_pos:
+            selected_x0 = selected_x0 + self.routed_pos[:, :Ksel, :]
+
+        # concat fusion
+        selected_fused = self.fuse_proj(
+            torch.cat([selected_h0, selected_x0], dim=-1)
+        )                                          # (B, K, D)
+
+        h2 = torch.cat([cls_h0, selected_fused], dim=1)   # (B, 1+K, D)
+
+        for blk in self.vit.blocks[self.split_block:]:
+            h2 = blk(h2)
+
+        h2 = self.vit.norm(h2)
+        logits = self.vit.head(h2[:, 0])
+
+        if return_debug:
+            patch_mask = H0_patches.new_zeros(B, N)
+            patch_mask.scatter_(1, idx, 1.0)
+
+            dbg_out = {
+                "logits": logits,
+                "x0": X0_patches,
+                "h0": H0_patches,
+                "selected_x0": selected_x0,
+                "selected_h0": selected_h0,
+                "selected_fused": selected_fused,
+                "selected_idx": idx,
+                "scores": scores,
+                "soft_w": soft_w,
+                "patch_mask": patch_mask,
+                "compact_tokens": h2[:, 1:, :],
+                "cls_h0": cls_h0,
+            }
+            return logits, dbg_out
+
+        return logits
+
+    def forward_debug(self, x):
+        self.eval()
+        with torch.no_grad():
+            _, dbg = self.forward(x, return_debug=True)
+        return dbg
+
+class RouteGumbelViTFullH0ScatterX0(nn.Module):
+    """
+    Full-h0 + scattered-selected-x0 concat fusion.
+
+    This is NOT token reduction anymore because later blocks still see full N tokens.
+
+    forward(x) -> logits
+    forward(x, return_debug=True) -> logits, dbg
+    """
+
+    def __init__(
+        self,
+        timm_name="vit_base_patch16_224",
+        pretrained=False,
+        num_classes=10,
+        split_block=4,
+        qk_dim=128,
+        keep_k=32,
+        mode="tokens",
+        reduce="logsumexp",
+        gather_from="x0",
+        tau=1.0,
+        add_routed_pos=True,
+    ):
+        super().__init__()
+
+        self.vit = timm.create_model(timm_name, pretrained=pretrained)
+        self.vit.reset_classifier(num_classes=num_classes)
+
+        for attr in ("patch_embed", "cls_token", "pos_embed", "pos_drop",
+                     "blocks", "norm", "head"):
+            assert hasattr(self.vit, attr), f"Expected vit.{attr} to exist."
+
+        self.num_classes = num_classes
+        self.num_features = self.embed_dim = self.vit.embed_dim
+        self.split_block = split_block
+        self.add_routed_pos = add_routed_pos
+        self.keep_k = keep_k
+
+        self.router = STGumbelTopKRouteBlock(
+            embed_dim=self.embed_dim,
+            qk_dim=qk_dim,
+            keep_k=keep_k,
+            mode=mode,
+            reduce=reduce,
+            gather_from=gather_from,
+            tau=tau,
+        )
+
+        self.routed_pos = nn.Parameter(torch.zeros(1, keep_k, self.embed_dim))
+        nn.init.trunc_normal_(self.routed_pos, std=0.02)
+
+        # concat fusion: [full_h0 ; scattered_selected_x0] -> D
+        self.fuse_proj = nn.Linear(2 * self.embed_dim, self.embed_dim)
+
+        self.last_selected_idx = None
+        self.last_scores = None
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {"vit.pos_embed", "vit.cls_token", "routed_pos"}
+
+    def get_classifier(self):
+        return self.vit.head
+
+    def reset_classifier(self, num_classes, global_pool=''):
+        self.num_classes = num_classes
+        self.vit.reset_classifier(num_classes)
+
+    def set_tau(self, tau: float):
+        if hasattr(self.router, "set_tau"):
+            self.router.set_tau(tau)
+        else:
+            self.router.tau = tau
+
+    def set_use_gumbel(self, flag: bool):
+        if hasattr(self.router, "set_use_gumbel"):
+            self.router.set_use_gumbel(flag)
+        else:
+            self.router.use_gumbel = flag
+
+    def forward(self, x, return_debug: bool = False):
+        B = x.shape[0]
+
+        x = self.vit.patch_embed(x)                 # (B, N, D)
+        N = x.shape[1]
+
+        cls = self.vit.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls, x), dim=1)             # (B, 1+N, D)
+        x = x + self.vit.pos_embed[:, :N + 1, :]
+        x = self.vit.pos_drop(x)
+
+        X0_patches = x[:, 1:, :]                   # (B, N, D)
+
+        h = x
+        for blk in self.vit.blocks[:self.split_block]:
+            h = blk(h)
+
+        cls_h0 = h[:, :1, :]
+        H0_patches = h[:, 1:, :]                   # (B, N, D)
+
+        selected_x0, dbg = self.router(X0_patches, H0_patches)
+        idx = dbg["idx"]                           # (B, K)
+        scores = dbg.get("scores", None)
+        soft_w = dbg.get("soft_w", None)
+
+        self.last_selected_idx = idx
+        self.last_scores = scores
+
+        Ksel = idx.shape[1]
+
+        if self.add_routed_pos:
+            selected_x0 = selected_x0 + self.routed_pos[:, :Ksel, :]
+
+        # scatter selected x0 back to full length
+        selected_x0_full = H0_patches.new_zeros(B, N, self.embed_dim)
+        selected_x0_full.scatter_(
+            1,
+            idx.unsqueeze(-1).expand(-1, -1, self.embed_dim),
+            selected_x0
+        )                                          # (B, N, D)
+
+        # full concat fusion
+        fused_patches = self.fuse_proj(
+            torch.cat([H0_patches, selected_x0_full], dim=-1)
+        )                                          # (B, N, D)
+
+        h2 = torch.cat([cls_h0, fused_patches], dim=1)    # (B, 1+N, D)
+
+        for blk in self.vit.blocks[self.split_block:]:
+            h2 = blk(h2)
+
+        h2 = self.vit.norm(h2)
+        logits = self.vit.head(h2[:, 0])
+
+        if return_debug:
+            patch_mask = H0_patches.new_zeros(B, N)
+            patch_mask.scatter_(1, idx, 1.0)
+
+            dbg_out = {
+                "logits": logits,
+                "x0": X0_patches,
+                "h0": H0_patches,
+                "selected_x0": selected_x0,
+                "selected_x0_full": selected_x0_full,
+                "fused_patches": fused_patches,
+                "selected_idx": idx,
+                "scores": scores,
+                "soft_w": soft_w,
+                "patch_mask": patch_mask,
+                "token_features": h2[:, 1:, :],
+                "cls_h0": cls_h0,
             }
             return logits, dbg_out
 

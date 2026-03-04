@@ -13,7 +13,8 @@ from models.baseline_vit import BaselineTimmViT
 from models.gumbel_masked_vit import MaskedViTConfig, MaskedViT
 from models.refined_vit import RefinedTimmViT
 from models.route_gumbel_vit import TimmViTWithTopKRouting_STGumbel, RoutingSchedule
-from models.routevit import RouteGumbelViTTokenReduction, RouteGumbelViTTokenEmphasis
+from models.routevit import RouteGumbelViTTokenReduction, RouteGumbelViTTokenEmphasis, \
+    RouteGumbelViTTokenReductionConcat
 from run_one_epoch import train_one_epoch, evaluate
 
 
@@ -228,7 +229,7 @@ def main():
 
         elif model_type == "token_reduction":
             print("Using ROUTE GUMBEL ViT (ST Gumbel-TopK)")
-            model = RouteGumbelViTTokenReduction(
+            model = RouteGumbelViTTokenReductionConcat(
                 timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
                 pretrained=model_cfg.get("pretrained", False),
                 num_classes=dset["num_classes"],
