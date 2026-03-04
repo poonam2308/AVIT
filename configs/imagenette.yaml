@@ -20,19 +20,26 @@ dataset:
 #  mlp_ratio: 4.0
 #  dropout: 0.1
 #  attn_dropout: 0.1
+
 model:
-  type: route_gumbel
-  keep_k: 32
-  split_block: 4
-  qk_dim: 128
-  mode: tokens
-  reduce: logsumexp
-  tau_start: 2.0
-  tau_end: 0.5
-  tau_decay: 0.9995
-  gumbel_off_step: 20000
-  lambda_div: 0.01
-  div_type: usage_entropy   # or batch_cosine
+  type: token_reduction
+  timm_name: vit_base_patch16_224
+  pretrained: False
+  keep_k: 96
+
+#model:
+#  type: route_gumbel
+#  keep_k: 32
+#  split_block: 4
+#  qk_dim: 128
+#  mode: tokens
+#  reduce: logsumexp
+#  tau_start: 2.0
+#  tau_end: 0.5
+#  tau_decay: 0.9995
+#  gumbel_off_step: 20000
+#  lambda_div: 0.01
+#  div_type: usage_entropy   # or batch_cosine
 gating:
   target_keep_ratio: 0.6
   lambda_budget: 1.0

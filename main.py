@@ -13,6 +13,7 @@ from models.baseline_vit import BaselineTimmViT
 from models.gumbel_masked_vit import MaskedViTConfig, MaskedViT
 from models.refined_vit import RefinedTimmViT
 from models.route_gumbel_vit import TimmViTWithTopKRouting_STGumbel, RoutingSchedule
+from models.routevit import RouteGumbelViTTokenReduction, RouteGumbelViTTokenEmphasis
 from run_one_epoch import train_one_epoch, evaluate
 
 
@@ -224,6 +225,26 @@ def main():
             model.lambda_div = model_cfg.get("lambda_div", 0.0)
             model.div_type = model_cfg.get("div_type", "usage_entropy")
 
+
+        elif model_type == "token_reduction":
+            print("Using ROUTE GUMBEL ViT (ST Gumbel-TopK)")
+            model = RouteGumbelViTTokenReduction(
+                timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
+                pretrained=model_cfg.get("pretrained", False),
+                num_classes=dset["num_classes"],
+                split_block=model_cfg.get("split_block", 4),
+                keep_k=model_cfg.get("keep_k", 32)
+            ).to(device)
+
+        elif model_type == "token_emphasis":
+            print("Using ROUTE GUMBEL ViT (ST Gumbel-TopK)")
+            model = RouteGumbelViTTokenEmphasis(
+                timm_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
+                pretrained=model_cfg.get("pretrained", False),
+                num_classes=dset["num_classes"],
+                split_block=model_cfg.get("split_block", 4),
+                keep_k=model_cfg.get("keep_k", 32)
+            ).to(device)
 
         else:
             print("Using REFINED ViT (token selection)")
