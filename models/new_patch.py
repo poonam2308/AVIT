@@ -49,7 +49,7 @@ def get_2d_sincos_pos_embed(embed_dim, grid_h, grid_w, device):
     return torch.cat([emb_y, emb_x], dim=1)  # [H*W, D]
 
 
-class OverlapPatchEmbed(nn.Module):
+class OverlapPatchEmbed_old(nn.Module):
     def __init__(self, in_chans=3, patch_size=16, stride=8, embed_dim=768):
         super().__init__()
         self.patch_size = patch_size
@@ -102,3 +102,53 @@ class OverlapPatchEmbed(nn.Module):
 #         B, C, Hs, Ws = feat.shape
 #         tokens = feat.flatten(2).transpose(1, 2)   # [B, N_new, C]
 #         return tokens, (Hs, Ws)
+
+
+
+class Learned2DPosEmbed(nn.Module):
+    def __init__(self, embed_dim, base_grid_size=27):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.base_grid_size = base_grid_size
+        self.pos = nn.Parameter(
+            torch.zeros(1, embed_dim, base_grid_size, base_grid_size)
+        )
+        nn.init.trunc_normal_(self.pos, std=0.02)
+
+    def forward(self, H, W):
+        pos = F.interpolate(
+            self.pos,
+            size=(H, W),
+            mode="bicubic",
+            align_corners=False,
+        )  # [1,C,H,W]
+        pos = pos.flatten(2).transpose(1, 2)   # [1,H*W,C]
+        return pos
+
+
+class OverlapPatchEmbed(nn.Module):
+    def __init__(self, in_chans=3, patch_size=16, stride=8, embed_dim=768, base_grid_size=27):
+        super().__init__()
+        self.patch_size = patch_size
+        self.stride = stride
+        self.proj = nn.Conv2d(
+            in_chans,
+            embed_dim,
+            kernel_size=patch_size,
+            stride=stride,
+            padding=0,
+            bias=True,
+        )
+        self.pos_embed = Learned2DPosEmbed(embed_dim, base_grid_size=base_grid_size)
+
+    def forward(self, x):
+        feat = self.proj(x)                         # [B,C,Hs,Ws]
+        B, C, Hs, Ws = feat.shape
+        tokens = feat.flatten(2).transpose(1, 2)   # [B,Ns,C]
+        return tokens, (Hs, Ws)
+
+    def forward_with_pos(self, x):
+        tokens, (Hs, Ws) = self.forward(x)
+        pos = self.pos_embed(Hs, Ws)               # [1,Ns,C]
+        tokens = tokens + pos
+        return tokens, (Hs, Ws), pos

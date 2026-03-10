@@ -87,9 +87,15 @@ class AdaptiveTokenVit(nn.Module):
                 sampled_tokens, sampled_hw, sampled_pos = self.overlap_embed.forward_with_pos(x)
 
                 # sampled_tokens attend to block-4 patch tokens
-                selected_tokens, scores, attn = self.selector(
-                    sampled_tokens=sampled_tokens,
+                # selected_tokens, scores, attn = self.selector(
+                #     sampled_tokens=sampled_tokens,
+                #     base_tokens=patch_toks,
+                #     hard=True,
+                # )
+                # queries are learned embeddings
+                selected_tokens, scores, attn, attended_patch, selected_idx = self.selector(
                     base_tokens=patch_toks,
+                    sampled_tokens=sampled_tokens,
                     hard=True,
                 )
 
