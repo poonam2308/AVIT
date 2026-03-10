@@ -15,7 +15,7 @@ class AdaptiveTokenVit(nn.Module):
         num_classes=10,
         inject_after=3,          # 0-based => after 4th block
         overlap_patch_size=16,
-        overlap_stride=8,
+        overlap_stride=1,
         top_k=16,
     ):
         super().__init__()
