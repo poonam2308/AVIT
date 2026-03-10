@@ -69,7 +69,7 @@ class CrossTokenSelector_old(nn.Module):
 
 # k,v = sampled_tokens
 class CrossTokenSelector(nn.Module):
-    def __init__(self, embed_dim, num_heads=8, top_k=16, gumbel_tau=1.0):
+    def __init__(self, embed_dim, num_heads=8, top_k=32, gumbel_tau=1.0):
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -81,6 +81,17 @@ class CrossTokenSelector(nn.Module):
         self.v_proj = nn.Linear(embed_dim, embed_dim)
         self.out_proj = nn.Linear(embed_dim, embed_dim)
 
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 4),
+            nn.GELU(),
+            nn.Linear(embed_dim * 4, embed_dim),
+        )
+
+        self.score_head = nn.Linear(embed_dim, 1)
+
     def forward(self, base_tokens, sampled_tokens, hard=True):
         """
         base_tokens:    [B, Nb, C]  -> block-4 patch tokens (queries)
@@ -91,7 +102,9 @@ class CrossTokenSelector(nn.Module):
         H = self.num_heads
         Dh = C // H
 
+        # queries from block-4 tokens
         q = self.q_proj(base_tokens).reshape(B, Nb, H, Dh).transpose(1, 2)      # [B,H,Nb,Dh]
+        # keys/values from sampled tokens
         k = self.k_proj(sampled_tokens).reshape(B, Ns, H, Dh).transpose(1, 2)   # [B,H,Ns,Dh]
         v = self.v_proj(sampled_tokens).reshape(B, Ns, H, Dh).transpose(1, 2)   # [B,H,Ns,Dh]
 
@@ -103,28 +116,31 @@ class CrossTokenSelector(nn.Module):
         attended = attended.transpose(1, 2).reshape(B, Nb, C)
         attended = self.out_proj(attended)                # [B,Nb,C]
 
-        # score sampled tokens by how much the block-4 queries attend to them
-        scores = attn.mean(dim=1).mean(dim=1)             # [B,Ns]
-        # mean over heads, then mean over query tokens
+        # Transformer-style refinement on query/output tokens
+        x = self.norm1(base_tokens + attended)
+        x = self.norm2(x + self.mlp(x))
 
-        k_keep = min(self.top_k, Ns)
+        # score refined output tokens, not sampled tokens
+        scores = self.score_head(x).squeeze(-1)  # [B,Nb]
+
+        k_keep = min(self.top_k, Nb)
         topk_idx = scores.topk(k=k_keep, dim=-1).indices  # [B,k]
 
         selected = torch.gather(
-            sampled_tokens,
+            x,
             1,
             topk_idx.unsqueeze(-1).expand(-1, -1, C)
         )  # [B,k,C]
 
         if hard:
-            return selected, scores, attn, attended, topk_idx
+            return selected, scores, attn, x, topk_idx
 
         # optional soft weighting before gathering
         weights = F.gumbel_softmax(scores, tau=self.gumbel_tau, hard=False, dim=-1)  # [B,Ns]
-        weighted_sampled = sampled_tokens * weights.unsqueeze(-1)
+        weighted_x = x * weights.unsqueeze(-1)
         selected = torch.gather(
-            weighted_sampled,
+            weighted_x,
             1,
             topk_idx.unsqueeze(-1).expand(-1, -1, C)
         )
-        return selected, scores, attn, attended, topk_idx
+        return selected, scores, attn, x, topk_idx

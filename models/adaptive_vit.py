@@ -71,6 +71,8 @@ class AdaptiveTokenVit(nn.Module):
         attn = None
         selected_tokens = None
         fused_patch_toks = None
+        selected_idx = None
+        attended_patch = None
 
         # run first 4 blocks
         for i, blk in enumerate(self.model.blocks):
@@ -92,7 +94,7 @@ class AdaptiveTokenVit(nn.Module):
                 #     base_tokens=patch_toks,
                 #     hard=True,
                 # )
-                # queries are learned embeddings
+                # queries are block-4 patch tokens, keys/values are sampled image patch tokens
                 selected_tokens, scores, attn, attended_patch, selected_idx = self.selector(
                     base_tokens=patch_toks,
                     sampled_tokens=sampled_tokens,
@@ -119,6 +121,7 @@ class AdaptiveTokenVit(nn.Module):
                 "patch_tokens_after_fusion": fused_patch_toks,
                 "tokens": x_tokens,
                 "cls_feat": cls_feat,
+                "selected_idx": selected_idx,
             }
             return cls_feat, aux
 

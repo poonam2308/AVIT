@@ -34,7 +34,7 @@ model:
   inject_after: 3
   overlap_patch_size: 16
   overlap_stride: 8
-  top_k: 16
+  top_k: 96
 
 #model:
 #  type: route_gumbel
@@ -65,7 +65,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagenette_samples_queries
+  out_dir: ./outputs/imagenette_samples_queries1
   epochs: 50
   lr: 0.0003
   weight_decay: 0.05
