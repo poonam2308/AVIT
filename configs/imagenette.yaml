@@ -1,7 +1,7 @@
 dataset:
   data_root: ./data/imagenette2
   img_size: 224
-  batch_size: 16
+  batch_size: 4
   num_classes: 10
   num_workers: 4
 
