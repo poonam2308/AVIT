@@ -65,7 +65,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagenette_route_tr_concat
+  out_dir: ./outputs/imagenette_samples
   epochs: 50
   lr: 0.0003
   weight_decay: 0.05
