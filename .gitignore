@@ -218,6 +218,8 @@ __marimo__/
 # datasets
 /data/imagenette2
 /data/imagewoof2
+/data/cifar*
 /outputs
-demo_script.ipynb
-demo_script1.ipynb
+notebooks/demo_script.ipynb
+notebooks/demo_script1.ipynb
+/notebooks

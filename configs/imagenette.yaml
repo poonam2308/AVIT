@@ -1,7 +1,7 @@
 dataset:
   data_root: ./data/imagenette2
   img_size: 224
-  batch_size: 64
+  batch_size: 16
   num_classes: 10
   num_workers: 4
 
@@ -21,11 +21,20 @@ dataset:
 #  dropout: 0.1
 #  attn_dropout: 0.1
 
+#model:
+#  type: token_emphasis
+#  timm_name: vit_base_patch16_224
+#  pretrained: False
+#  keep_k: 96
+
 model:
-  type: token_emphasis
+  type: adaptive_vit
   timm_name: vit_base_patch16_224
-  pretrained: False
-  keep_k: 96
+  pretrained: false
+  inject_after: 3
+  overlap_patch_size: 16
+  overlap_stride: 8
+  top_k: 16
 
 #model:
 #  type: route_gumbel

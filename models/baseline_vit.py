@@ -3,6 +3,21 @@ import torch
 import torch.nn as nn
 
 
+class TimmVit(nn.Module):
+    def __init__(
+            self,
+            model_name="vit_base_patch16_224",
+            pretrained=False,
+            num_classes=1000,
+    ):
+        super(TimmVit, self).__init__()
+        self.model = timm.create_model(model_name, pretrained=pretrained,
+                                       num_classes=num_classes,)
+        self.num_features = self.model.num_features
+    def forward(self, x):
+        return self.model(x)
+
+
 class BaselineTimmViT(nn.Module):
     """
     Plain timm ViT/DeiT baseline (no token pruning).

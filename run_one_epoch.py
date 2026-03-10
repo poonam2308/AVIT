@@ -58,12 +58,13 @@ def train_one_epoch(
                 model.router.use_gumbel = bool(use_gumbel)
 
         # ---- forward (request debug if supported) ----
-        try:
-            logits, dbg = model(images, return_debug=True)
-        except TypeError:
-            logits = model(images)
-            dbg = None
-
+        # try:
+        #     logits, dbg = model(images, return_debug=True)
+        # except TypeError:
+        #     logits = model(images)
+        #     dbg = None
+        logits = model(images)
+        dbg = None
         loss_task = F.cross_entropy(logits, labels)
         loss = loss_task
 
