@@ -98,7 +98,7 @@ class AdaptiveTokenVit(nn.Module):
                 selected_tokens, scores, attn, attended_patch, selected_idx = self.selector(
                     base_tokens=patch_toks,
                     sampled_tokens=sampled_tokens,
-                    hard=True,
+                    hard=False,
                 )
 
                 # simple fusion: concatenate selected sampled tokens to patch tokens

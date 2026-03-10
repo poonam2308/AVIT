@@ -33,7 +33,7 @@ model:
   pretrained: false
   inject_after: 3
   overlap_patch_size: 16
-  overlap_stride: 8
+  overlap_stride: 1
   top_k: 96
 
 #model:
@@ -65,7 +65,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagenette_stride_1
+  out_dir: ./outputs/imagenette_stride_1_gumbel
   epochs: 50
   lr: 0.0003
   weight_decay: 0.05
