@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timm
 
-from models.cross_tokens_selector import CrossTokenSelector, CrossTokenSelectorSaliency
+from models.cross_tokens_selector import CrossTokenSelector, CrossTokenSelectorSaliency, CrossTokenSelectorSaliency_new
 from models.new_patch import OverlapPatchEmbed
 from models.token_fuse import TokenFusion
 
@@ -37,7 +37,7 @@ class AdaptiveTokenVit(nn.Module):
             embed_dim=self.embed_dim,
         )
 
-        self.selector = CrossTokenSelectorSaliency(
+        self.selector = CrossTokenSelectorSaliency_new(
             embed_dim=self.embed_dim,
             num_heads=self.model.blocks[0].attn.num_heads,
             top_k=top_k,
@@ -94,7 +94,7 @@ class AdaptiveTokenVit(nn.Module):
                 #     hard=True,
                 # )
                 # queries are block-4 patch tokens, keys/values are sampled image patch tokens
-                selected_tokens, scores, attn, selected_idx = self.selector(
+                selected_tokens, scores, attn, selected_idx, _ = self.selector(
                     base_tokens=patch_toks,
                     sampled_tokens=sampled_tokens,
                     hard=False,

@@ -223,3 +223,89 @@ class CrossTokenSelectorSaliency(nn.Module):
         x = self.norm2(x + self.mlp(x))                                           # [B,k,C]
 
         return x, query_scores, selected_attn, topk_idx
+
+
+
+class CrossTokenSelectorSaliency_new(nn.Module):
+    def __init__(self, embed_dim, num_heads=8, top_k=32, gumbel_tau=1.0):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.top_k = top_k
+        self.gumbel_tau = gumbel_tau
+
+        self.q_proj = nn.Linear(embed_dim, embed_dim)
+        self.k_proj = nn.Linear(embed_dim, embed_dim)
+        self.v_proj = nn.Linear(embed_dim, embed_dim)
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 4),
+            nn.GELU(),
+            nn.Linear(embed_dim * 4, embed_dim),
+        )
+
+    def forward(self, base_tokens, sampled_tokens, hard=True):
+        """
+        base_tokens:    [B, Nb, C]  -> block-4 patch tokens
+        sampled_tokens: [B, Ns, C]  -> dense sampled patch tokens
+
+        Logic:
+        1. score sampled tokens by max similarity with base tokens
+        2. top-k sampled token selection
+        3. use base_tokens as queries, selected sampled tokens as keys/values
+        4. attention + MLP refinement on base tokens
+        """
+        B, Nb, C = base_tokens.shape
+        Ns = sampled_tokens.shape[1]
+        H = self.num_heads
+        Dh = C // H
+
+        # ---- Stage 1: prototype-style saliency scoring over sampled tokens ----
+        # similarity between sampled patches and block-4 tokens
+        # [B, Ns, Nb]
+        saliency_logits = torch.einsum(
+            "bid,bjd->bij", sampled_tokens, base_tokens
+        ) / (C ** 0.5)
+
+        # score each sampled token by its strongest match to any base token
+        sampled_scores = saliency_logits.max(dim=-1).values   # [B, Ns]
+
+        k_keep = min(self.top_k, Ns)
+
+        if hard:
+            select_scores = sampled_scores
+        else:
+            gumbel_noise = -torch.log(
+                -torch.log(torch.rand_like(sampled_scores).clamp_min(1e-9))
+            )
+            select_scores = sampled_scores + self.gumbel_tau * gumbel_noise
+
+        topk_idx = select_scores.topk(k=k_keep, dim=-1).indices   # [B, k]
+
+        selected_sampled = torch.gather(
+            sampled_tokens,
+            1,
+            topk_idx.unsqueeze(-1).expand(-1, -1, C)
+        )   # [B, k, C]
+
+        # ---- Stage 2: cross-attention using selected sampled tokens as K,V ----
+        q = self.q_proj(base_tokens).reshape(B, Nb, H, Dh).transpose(1, 2)             # [B,H,Nb,Dh]
+        k = self.k_proj(selected_sampled).reshape(B, k_keep, H, Dh).transpose(1, 2)    # [B,H,k,Dh]
+        v = self.v_proj(selected_sampled).reshape(B, k_keep, H, Dh).transpose(1, 2)    # [B,H,k,Dh]
+
+        attn_logits = (q @ k.transpose(-2, -1)) / (Dh ** 0.5)                           # [B,H,Nb,k]
+        attn = attn_logits.softmax(dim=-1)
+
+        attended = attn @ v                                                              # [B,H,Nb,Dh]
+        attended = attended.transpose(1, 2).reshape(B, Nb, C)                           # [B,Nb,C]
+        attended = self.out_proj(attended)
+
+        # transformer-style refinement on base tokens
+        x = self.norm1(base_tokens + attended)
+        x = self.norm2(x + self.mlp(x))                                                  # [B,Nb,C]
+
+        return x, sampled_scores, attn, topk_idx, selected_sampled
