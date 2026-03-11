@@ -281,6 +281,20 @@ def main():
             weight_decay=train_cfg.get("weight_decay", 0.05),
         )
 
+        scheduler_name = train_cfg.get("scheduler", "cosine").lower()
+        eta_min = train_cfg.get("eta_min", 1e-6)
+
+        if scheduler_name == "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=train_cfg["epochs"],
+                eta_min=eta_min,
+            )
+        elif scheduler_name == "none":
+            scheduler = None
+        else:
+            raise ValueError(f"Unknown scheduler: {scheduler_name}")
+
         best_acc = -1.0
         # history = {"epoch": [], "train_loss": [], "train_keep": [], "train_tau": [], "val_acc": []}
         history = {"epoch": [], "train_loss": [], "val_acc": []}
@@ -319,6 +333,10 @@ def main():
                 best_acc = acc
                 save_checkpoint(out_dir / "checkpoints" / "best.pth", model, optimizer, cfg_dict, epoch, global_step, best_acc)
                 print(f"[ckpt] new best acc {best_acc * 100:.2f}% -> saved best.pth")
+            if scheduler is not None:
+                scheduler.step()
+
+            print(f"[lr] epoch {epoch}  lr {optimizer.param_groups[0]['lr']:.6e}")
 
         print("done")
 
