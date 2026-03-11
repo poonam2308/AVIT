@@ -8,6 +8,7 @@ class TokenFusion(nn.Module):
     def __init__(self, dim, heads=8):
         super().__init__()
         self.attn = nn.MultiheadAttention(dim, heads, batch_first=True)
+        self.gamma = nn.Parameter(torch.zeros(1)) # Start at 0
         self.norm1 = nn.LayerNorm(dim)
         self.mlp = nn.Sequential(
             nn.Linear(dim, dim * 4),
@@ -24,4 +25,4 @@ class TokenFusion(nn.Module):
         )
         x = self.norm1(patch_toks + out)
         x = self.norm2(x + self.mlp(x))
-        return x
+        return self.gamma * x

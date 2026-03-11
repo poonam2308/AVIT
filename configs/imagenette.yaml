@@ -65,7 +65,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/salient_new_lr_worker1
+  out_dir: ./outputs/salient_ref
   epochs: 100
   lr: 0.0003
   weight_decay: 0.05

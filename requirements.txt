@@ -6,3 +6,4 @@ torchvision
 pyyaml
 wandb
 timm
+einops

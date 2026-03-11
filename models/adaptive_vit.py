@@ -5,9 +5,10 @@ import timm
 
 from models.cross_tokens_selector import CrossTokenSelector, CrossTokenSelectorSaliency, CrossTokenSelectorSaliency_new
 from models.new_patch import OverlapPatchEmbed
+from models.refined_sampling_block import RefinedSamplingBlock
 from models.token_fuse import TokenFusion
 
-class AdaptiveTokenVit(nn.Module):
+class AdaptiveTokenVit_old(nn.Module):
     def __init__(
         self,
         model_name="vit_base_patch16_224",
@@ -134,5 +135,71 @@ class AdaptiveTokenVit(nn.Module):
             return aux
 
         cls_feat = self.forward_features(x, return_aux=False)
+        logits = self.model.head(cls_feat)
+        return logits
+
+
+# adaptive_vit.py
+
+class AdaptiveTokenVit(nn.Module):
+    def __init__(
+            self,
+            model_name="vit_base_patch16_224",
+            pretrained=True,
+            num_classes=10,
+            inject_after=3,
+            overlap_patch_size=16,
+            overlap_stride=4,  # Optimized stride
+            top_k=100,
+    ):
+        super().__init__()
+
+        self.model = timm.create_model(
+            model_name,
+            pretrained=pretrained,
+            num_classes=num_classes,
+        )
+
+        self.embed_dim = self.model.embed_dim
+        self.inject_after = inject_after
+
+        # Integrate the RefinedSamplingBlock directly
+        self.refiner = RefinedSamplingBlock(
+            embed_dim=self.embed_dim,
+            patch_size=overlap_patch_size,
+            top_k=top_k,
+            stride=overlap_stride
+        )
+
+    def forward_features(self, x):
+        B = x.shape[0]
+
+        # 1. Initial Patch Embedding
+        x_patch = self.model.patch_embed(x)
+        cls_token = self.model.cls_token.expand(B, -1, -1)
+
+        if self.model.pos_embed is not None:
+            x_tokens = torch.cat((cls_token, x_patch), dim=1)
+            x_tokens = x_tokens + self.model.pos_embed[:, : x_tokens.shape[1], :]
+        else:
+            x_tokens = torch.cat((cls_token, x_patch), dim=1)
+
+        x_tokens = self.model.pos_drop(x_tokens)
+
+        # 2. Sequential Block Processing
+        for i, blk in enumerate(self.model.blocks):
+            x_tokens = blk(x_tokens)
+
+            # 3. Injection Point
+            if i == self.inject_after:
+                # Use the provided RefinedSamplingBlock code
+                # This handles sampling, energy scoring, top-k selection, and concatenation
+                x_tokens = self.refiner(x, x_tokens)
+
+        x_tokens = self.model.norm(x_tokens)
+        return x_tokens[:, 0]  # Return CLS token feature
+
+    def forward(self, x):
+        cls_feat = self.forward_features(x)
         logits = self.model.head(cls_feat)
         return logits
