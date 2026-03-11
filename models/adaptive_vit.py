@@ -72,7 +72,6 @@ class AdaptiveTokenVit(nn.Module):
         selected_tokens = None
         fused_patch_toks = None
         selected_idx = None
-        attended_patch = None
 
         # run first 4 blocks
         for i, blk in enumerate(self.model.blocks):
@@ -95,7 +94,7 @@ class AdaptiveTokenVit(nn.Module):
                 #     hard=True,
                 # )
                 # queries are block-4 patch tokens, keys/values are sampled image patch tokens
-                selected_tokens, scores, attn, attended_patch, selected_idx = self.selector(
+                selected_tokens, scores, attn, selected_idx = self.selector(
                     base_tokens=patch_toks,
                     sampled_tokens=sampled_tokens,
                     hard=False,
