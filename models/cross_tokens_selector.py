@@ -144,3 +144,74 @@ class CrossTokenSelector(nn.Module):
             topk_idx.unsqueeze(-1).expand(-1, -1, C)
         )
         return selected, scores, attn, x, topk_idx
+
+
+class CrossTokenSelectorSaliency(nn.Module):
+    def __init__(self, embed_dim, num_heads=8, top_k=32):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.top_k = top_k
+
+        self.q_proj = nn.Linear(embed_dim, embed_dim)
+        self.k_proj = nn.Linear(embed_dim, embed_dim)
+        self.v_proj = nn.Linear(embed_dim, embed_dim)
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 4),
+            nn.GELU(),
+            nn.Linear(embed_dim * 4, embed_dim),
+        )
+
+    def forward(self, base_tokens, sampled_tokens):
+        """
+        base_tokens:   [B, Nb, C]  queries from block-4
+        sampled_tokens:[B, Ns, C]  keys/values from new patches
+        """
+        B, Nb, C = base_tokens.shape
+        Ns = sampled_tokens.shape[1]
+        H = self.num_heads
+        Dh = C // H
+
+        q = self.q_proj(base_tokens).reshape(B, Nb, H, Dh).transpose(1, 2)      # [B,H,Nb,Dh]
+        k = self.k_proj(sampled_tokens).reshape(B, Ns, H, Dh).transpose(1, 2)   # [B,H,Ns,Dh]
+        v = self.v_proj(sampled_tokens).reshape(B, Ns, H, Dh).transpose(1, 2)   # [B,H,Ns,Dh]
+
+        # raw attention logits
+        logits = (q @ k.transpose(-2, -1)) / (Dh ** 0.5)                         # [B,H,Nb,Ns]
+
+        # score each query token BEFORE softmax
+        query_scores = logits.max(dim=-1).values.mean(dim=1)                     # [B,Nb]
+
+        k_keep = min(self.top_k, Nb)
+        topk_idx = query_scores.topk(k=k_keep, dim=-1).indices                   # [B,k]
+
+        # gather selected query logits
+        selected_logits = torch.gather(
+            logits.transpose(1, 2),  # [B,Nb,H,Ns]
+            1,
+            topk_idx[:, :, None, None].expand(-1, -1, H, Ns)
+        ).transpose(1, 2)            # [B,H,k,Ns]
+
+        # softmax only after selecting top-k queries
+        selected_attn = selected_logits.softmax(dim=-1)                          # [B,H,k,Ns]
+
+        selected_out = selected_attn @ v                                          # [B,H,k,Dh]
+        selected_out = selected_out.transpose(1, 2).reshape(B, k_keep, C)        # [B,k,C]
+        selected_out = self.out_proj(selected_out)
+
+        # transformer-style refinement on selected outputs
+        selected_base = torch.gather(
+            base_tokens,
+            1,
+            topk_idx.unsqueeze(-1).expand(-1, -1, C)
+        )                                                                         # [B,k,C]
+
+        x = self.norm1(selected_base + selected_out)
+        x = self.norm2(x + self.mlp(x))                                           # [B,k,C]
+
+        return x, query_scores, selected_attn, topk_idx
