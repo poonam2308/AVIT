@@ -147,11 +147,12 @@ class CrossTokenSelector(nn.Module):
 
 
 class CrossTokenSelectorSaliency(nn.Module):
-    def __init__(self, embed_dim, num_heads=8, top_k=32):
+    def __init__(self, embed_dim, num_heads=8, top_k=32, gumbel_tau=1.0):
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.top_k = top_k
+        self.gumbel_tau = gumbel_tau
 
         self.q_proj = nn.Linear(embed_dim, embed_dim)
         self.k_proj = nn.Linear(embed_dim, embed_dim)
@@ -167,7 +168,7 @@ class CrossTokenSelectorSaliency(nn.Module):
             nn.Linear(embed_dim * 4, embed_dim),
         )
 
-    def forward(self, base_tokens, sampled_tokens):
+    def forward(self, base_tokens, sampled_tokens, hard=True):
         """
         base_tokens:   [B, Nb, C]  queries from block-4
         sampled_tokens:[B, Ns, C]  keys/values from new patches
@@ -188,7 +189,14 @@ class CrossTokenSelectorSaliency(nn.Module):
         query_scores = logits.max(dim=-1).values.mean(dim=1)                     # [B,Nb]
 
         k_keep = min(self.top_k, Nb)
-        topk_idx = query_scores.topk(k=k_keep, dim=-1).indices                   # [B,k]
+        # topk_idx = query_scores.topk(k=k_keep, dim=-1).indices                   # [B,k]
+        if hard:
+            select_scores = query_scores
+        else:
+            gumbel_noise = -torch.log(-torch.log(torch.rand_like(query_scores).clamp_min(1e-9)))
+            select_scores = query_scores + self.gumbel_tau * gumbel_noise
+
+        topk_idx = select_scores.topk(k=k_keep, dim=-1).indices
 
         # gather selected query logits
         selected_logits = torch.gather(
