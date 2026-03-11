@@ -1,7 +1,7 @@
 dataset:
   data_root: ./data/imagenette2
   img_size: 224
-  batch_size: 4
+  batch_size: 8
   num_classes: 10
   num_workers: 4
 
@@ -32,8 +32,8 @@ model:
   timm_name: vit_base_patch16_224
   pretrained: false
   inject_after: 3
-  overlap_patch_size: 16
-  overlap_stride: 1
+  overlap_patch_size: 4
+  overlap_stride: 4
   top_k: 96
 
 #model:
@@ -65,7 +65,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/imagenette_stride_1_gumbel
+  out_dir: ./outputs/imagenette_stride_4_gumbel
   epochs: 50
   lr: 0.0003
   weight_decay: 0.05
