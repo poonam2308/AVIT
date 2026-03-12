@@ -251,7 +251,7 @@ class SimpleAdaptiveTokenVit(nn.Module):
         # Cross-attention fusion
         self.cross_attn = nn.MultiheadAttention(
             self.embed_dim,
-            num_heads=self.vit.blocks[0].attn.num_heads,
+            num_heads=1,
             batch_first=True,
         )
         self.norm_fusion = nn.LayerNorm(self.embed_dim)
