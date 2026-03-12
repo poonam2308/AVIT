@@ -216,7 +216,7 @@ class SimpleAdaptiveTokenVit(nn.Module):
         inject_after=3,          # after block 4 (0-based)
         embed_dim=768,
         dense_patch_size=16,
-        dense_stride=1,
+        dense_stride=2,
         img_size=224,
     ):
         super().__init__()
