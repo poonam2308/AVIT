@@ -16,7 +16,7 @@ from models.route_gumbel_vit import TimmViTWithTopKRouting_STGumbel, RoutingSche
 from models.routevit import RouteGumbelViTTokenReduction, RouteGumbelViTTokenEmphasis, \
     RouteGumbelViTTokenReductionConcat
 from run_one_epoch import train_one_epoch, evaluate
-from models.adaptive_vit import AdaptiveTokenVit
+from models.adaptive_vit import AdaptiveTokenVit, SimpleAdaptiveTokenVit
 
 
 def deep_update(base: dict, updates: dict) -> dict:
@@ -251,14 +251,14 @@ def main():
         elif model_type in ("adaptive_vit", "adaptive", "adaptive_token_vit"):
             print("Using ADAPTIVE ViT")
 
-            model = AdaptiveTokenVit(
+            model = SimpleAdaptiveTokenVit(
                 model_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
                 pretrained=model_cfg.get("pretrained", False),
                 num_classes=dset["num_classes"],
                 inject_after=model_cfg.get("inject_after", 3),
-                overlap_patch_size=model_cfg.get("overlap_patch_size", 16),
-                overlap_stride=model_cfg.get("overlap_stride", 8),
-                top_k=model_cfg.get("top_k", 16),
+                # overlap_patch_size=model_cfg.get("overlap_patch_size", 16),
+                # overlap_stride=model_cfg.get("overlap_stride", 8),
+                # top_k=model_cfg.get("top_k", 16),
             ).to(device)
 
         else:

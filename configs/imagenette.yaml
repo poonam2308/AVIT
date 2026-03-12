@@ -32,9 +32,9 @@ model:
   timm_name: vit_base_patch16_224
   pretrained: false
   inject_after: 3
-  overlap_patch_size: 4
-  overlap_stride: 4
-  top_k: 96
+#  overlap_patch_size: 4
+#  overlap_stride: 4
+#  top_k: 96
 
 #model:
 #  type: route_gumbel
@@ -65,7 +65,7 @@ gumbel:
   inference_topk: null
 
 train:
-  out_dir: ./outputs/salient_ref
+  out_dir: ./outputs/simple_avit
   epochs: 100
   lr: 0.0003
   weight_decay: 0.05
