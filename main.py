@@ -15,6 +15,7 @@ from models.refined_vit import RefinedTimmViT
 from models.route_gumbel_vit import TimmViTWithTopKRouting_STGumbel, RoutingSchedule
 from models.routevit import RouteGumbelViTTokenReduction, RouteGumbelViTTokenEmphasis, \
     RouteGumbelViTTokenReductionConcat
+from models.simple_adaptive_vit import SimpleGateAdaptiveTokenVit
 from run_one_epoch import train_one_epoch, evaluate
 from models.adaptive_vit import AdaptiveTokenVit, SimpleAdaptiveTokenVit
 
@@ -251,7 +252,7 @@ def main():
         elif model_type in ("adaptive_vit", "adaptive", "adaptive_token_vit"):
             print("Using ADAPTIVE ViT")
 
-            model = SimpleAdaptiveTokenVit(
+            model = SimpleGateAdaptiveTokenVit(
                 model_name=model_cfg.get("timm_name", "vit_base_patch16_224"),
                 pretrained=model_cfg.get("pretrained", False),
                 num_classes=dset["num_classes"],
